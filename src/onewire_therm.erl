@@ -5,7 +5,7 @@
 -define(TIMER, timer).
 
 -record(onewire_therm, {
-    id,
+    message,
     crc,
     temperature
   }).
@@ -98,17 +98,17 @@ read(Binary) when is_binary(Binary) ->
 
 read(<<A1:16,_,A2:16,_,A3:16,_,A4:16,_,A5:16,_,A6:16,_,A7:16,_,A8:16,_,CRC:16,Rest0/binary>>,
   #onewire_therm{
-    id = undefined
+    message = undefined
   } = OneWire) ->
   [_, Rest] = to_nl(Rest0),
   read(Rest, OneWire#onewire_therm{
-      id = <<A1:16,A2:16,A3:16,A4:16,A5:16,A6:16,A7:16,A8:16>>,
+      message = <<A1:16,A2:16,A3:16,A4:16,A5:16,A6:16,A7:16,A8:16>>,
       crc = <<CRC:16>>
     });
 
 read(<<A1:16,_,A2:16,_,A3:16,_,A4:16,_,A5:16,_,A6:16,_,A7:16,_,A8:16,_,CRC:16," t=",Rest/binary>>,
   #onewire_therm{
-    id = <<A1:16,A2:16,A3:16,A4:16,A5:16,A6:16,A7:16,A8:16>>,
+    message = <<A1:16,A2:16,A3:16,A4:16,A5:16,A6:16,A7:16,A8:16>>,
     crc = <<CRC:16>>
   } = OneWire) ->
   [TemperatureBinary|_] = to_nl(Rest),
@@ -117,19 +117,28 @@ read(<<A1:16,_,A2:16,_,A3:16,_,A4:16,_,A5:16,_,A6:16,_,A7:16,_,A8:16,_,CRC:16," 
     });
 
 read(_, #onewire_therm{
-    id = Id,
+    message = Message,
     crc = CRC,
     temperature = Temperature
-  } = OneWire) when Id =:= undefined; CRC =:= undefined; Temperature =:= undefined ->
+  } = OneWire) when Message =:= undefined; CRC =:= undefined; Temperature =:= undefined ->
   {error, {temperature_not_found, OneWire}};
 
 read(_, #onewire_therm{
-    id = Id,
-    crc = CRC
-  } = OneWire) -> OneWire#onewire_therm{
-    id = onewire_therm_hex:hexstr_to_bin(binary_to_list(Id)),
-    crc = onewire_therm_hex:hexstr_to_bin(binary_to_list(CRC))
-  }.
+    message = Message0,
+    crc = CRC0,
+    temperature = Temperature
+  }) ->
+
+  Message = onewire_therm_hex:hexstr_to_bin(binary_to_list(Message0)),
+  CRC = onewire_therm_hex:hexstr_to_bin(binary_to_list(CRC0)),
+
+  case onewire_therm_crc:crc8(Message) of
+    CRC ->
+      {ok, Temperature};
+    CRC0 ->
+      lager:info("Incorrect CRC ~p ~p", [CRC, CRC0]),
+      {error, incorrect_crc}
+  end.
 
 to_nl(Binary) ->
   binary:split(Binary, <<10>>).
