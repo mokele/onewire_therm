@@ -1,0 +1,11 @@
+{application, onewire_therm, [
+    {description, ""},
+    {vsn, "1"},
+    {registered, []},
+    {applications, [
+        kernel,
+        stdlib
+      ]},
+    {mod, { onewire_therm_app, []}},
+    {env, []}
+  ]}.
