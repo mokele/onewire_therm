@@ -15,7 +15,8 @@ lrwxrwxrwx 1 root root 0 Apr  9 11:33 28-0000043792e5 -> ../../../devices/w1_bus
 ```erlang
 1> onewire_therm_manager:subscribe("w1", "28-0000043792e5").
 {ok,undefined,undefined} % undefined temperature and timestamp after
-initial start
+                         % initial start
+
 2> flush().
 Shell got {therm,{"w1","28-0000043792e5"},15.437,{1365,511902,564105}}
 ok
@@ -23,6 +24,18 @@ ok
 Shell got {therm,{"w1","28-0000043792e5"},15.375,{1365,511914,599490}}
 Shell got {therm,{"w1","28-0000043792e5"},15.437,{1365,511917,439586}}
 ok
+4> exit(self(), kill).
+** exception exit: killed
+5> onewire_therm_manager:subscribe("w1", "28-0000043792e5").
+{ok,15.312,{1365,515681,309393}} % was already running so gave a value 
+                                 % straight away
+6> onewire_therm_manager:subscribe("w1", "28-000004753e42").
+{ok,undefined,undefined} % undefined temperature and timestamp after
+                         % intiial start for this sensor
+6> onewire_therm_manager:unsubscribe("w1", "28-0000043792e5").
+ok % from specific device
+7> onewire_therm_manager:unsubscribe().
+ok % from all
 ```
 
 You do not need to monitor or link to any processes in onewire_therm,

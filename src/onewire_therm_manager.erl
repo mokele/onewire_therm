@@ -11,6 +11,8 @@
 -export([
     start_link/1,
     subscribe/2,
+    unsubscribe/0,
+    unsubscribe/2,
     publish/2
   ]).
 
@@ -38,6 +40,12 @@ start_link(App) ->
 
 subscribe(Wire, Device) ->
   gen_server:call(?SERVER, {subscribe, self(), Wire, Device}).
+
+unsubscribe() ->
+  gen_server:call(?SERVER, {unsubscribe, self()}).
+
+unsubscribe(Wire, Device) ->
+  gen_server:call(?SERVER, {unsubscribe, self(), Wire, Device}).
 
 publish(Subscribers, Message) ->
   ets:foldl(
@@ -83,12 +91,13 @@ handle_call({subscribe, Subscriber, Wire, Device}, _From, #s{
     therms = Therms
   } = State) ->
   Key = {Wire, Device},
-  ThermPid =
+  {ThermPid, Subscribers} =
     case ets:lookup(Therms, Key) of
       [{Key, ThermPid0}] ->
-        ThermPid0;
+        [{ThermPid0, Key, Subscribers0}] = ets:lookup(Therms, ThermPid0),
+        {ThermPid0, Subscribers0};
       [] ->
-        Subscribers =
+        Subscribers1 =
           case ets:lookup(?THERMS_TO_SUBSCRIBERS_TAB, Key) of
             [{Key, Subscribers0}] ->
               Subscribers0;
@@ -98,18 +107,24 @@ handle_call({subscribe, Subscriber, Wire, Device}, _From, #s{
               ets:insert(?THERMS_TO_SUBSCRIBERS_TAB, {Key, Subscribers0}),
               Subscribers0
           end,
-        {ok, ThermPid0} = onewire_therm_sup_sup:start_child(Subscribers, Wire, Device),
+        {ok, ThermPid0} = onewire_therm_sup_sup:start_child(Subscribers1, Wire, Device),
         monitor(process, ThermPid0),
-        ets:insert(?SUBSCRIBERS_TO_THERMS_TAB, {Subscriber, Key}),
-        ets:insert(Subscribers, {Subscriber}),
-        ets:insert(Therms, {ThermPid0, Key, Subscribers}),
+        ets:insert(Therms, {ThermPid0, Key, Subscribers1}),
         ets:insert(Therms, {Key, ThermPid0}),
-        ThermPid0
+        {ThermPid0, Subscribers1}
     end,
+  ets:insert(?SUBSCRIBERS_TO_THERMS_TAB, {Subscriber, Key}),
+  ets:insert(Subscribers, {Subscriber}),
 
   monitor(process, Subscriber),
   {reply, onewire_therm:temperature(ThermPid), State};
 
+handle_call({unsubscribe, Pid}, _From, #s{therms = Therms} = State) ->
+  unsubscribe_all(Pid, Therms),
+  {reply, ok, State};
+handle_call({unsubscribe, Pid, Wire, Device}, _From, #s{therms = Therms} = State) ->
+  unsubscribe_therm(Pid, {Wire,Device}, Therms),
+  {reply, ok, State};
 handle_call(_Request, _From, State) ->
   {reply, ok, State}.
 
@@ -119,13 +134,9 @@ handle_cast(_Msg, State) ->
 handle_info({'DOWN', _Ref, process, Pid, _}, #s{
     therms = Therms
   } = State) ->
-  case ets:lookup(?SUBSCRIBERS_TO_THERMS_TAB, Pid) of
-    [{Pid, Key}] ->
-      [{Key, ThermPid}] = ets:lookup(Therms, Key),
-      [{ThermPid, Key, Subscribers}] = ets:lookup(Therms, ThermPid),
-      ets:delete(?SUBSCRIBERS_TO_THERMS_TAB, Pid),
-      ets:delete(Subscribers, Pid);
-    [] ->
+  case unsubscribe_all(Pid, Therms) of
+    true -> ok;
+    false ->
       case ets:lookup(Therms, Pid) of
         [{Pid, {Wire, Device} = Key, Subscribers}] ->
           {ok, ThermPid} = onewire_therm_sup_sup:start_child(Subscribers, Wire, Device),
@@ -149,3 +160,26 @@ code_change(_OldVsn, State, _Extra) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+unsubscribe_all(Pid, Therms) ->
+  case ets:lookup(?SUBSCRIBERS_TO_THERMS_TAB, Pid) of
+    [] -> false;
+    L ->
+      lists:foreach(
+        fun({_, Key}) ->
+            unsubscribe_therm(Pid, Key, Therms)
+        end,
+        L
+      ),
+      true
+  end.
+
+unsubscribe_therm(Pid, Key, Therms) ->
+  [{Key, ThermPid}] = ets:lookup(Therms, Key),
+  [{ThermPid, Key, Subscribers}] = ets:lookup(Therms, ThermPid),
+  ets:delete(?SUBSCRIBERS_TO_THERMS_TAB, Pid),
+  ets:delete(Subscribers, Pid),
+  [{Key, ThermPid}] = ets:lookup(Therms, Key),
+  [{ThermPid, Key, Subscribers}] = ets:lookup(Therms, ThermPid),
+  ets:delete(?SUBSCRIBERS_TO_THERMS_TAB, Pid),
+  ets:delete(Subscribers, Pid).
