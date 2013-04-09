@@ -24,17 +24,19 @@ ok
 Shell got {therm,{"w1","28-0000043792e5"},15.375,{1365,511914,599490}}
 Shell got {therm,{"w1","28-0000043792e5"},15.437,{1365,511917,439586}}
 ok
-4> exit(self(), kill).
-** exception exit: killed
+4> onewire_therm_manager:unsubscribe("w1", "28-0000043792e5").
+ok % from specific device
 5> onewire_therm_manager:subscribe("w1", "28-0000043792e5").
 {ok,15.312,{1365,515681,309393}} % was already running so gave a value 
                                  % straight away
 6> onewire_therm_manager:subscribe("w1", "28-000004753e42").
 {ok,undefined,undefined} % undefined temperature and timestamp after
                          % intiial start for this sensor
-6> onewire_therm_manager:unsubscribe("w1", "28-0000043792e5").
-ok % from specific device
-7> onewire_therm_manager:unsubscribe().
+7> flush().
+Shell got {therm,{"w1","28-000004753e42"},15.375,{1365,517785,992688}}
+Shell got {therm,{"w1","28-0000043792e5"},15.687,{1365,517792,786987}}
+ok
+8> onewire_therm_manager:unsubscribe().
 ok % from all
 ```
 
