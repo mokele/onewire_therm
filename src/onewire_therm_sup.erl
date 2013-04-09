@@ -4,7 +4,7 @@
 
 %% API
 -export([
-    start_link/0
+    start_link/1
   ]).
 
 %% Supervisor callbacks
@@ -13,21 +13,21 @@
   ]).
 
 %% Helper macro for declaring children of supervisor
--define(CHILD(I, Type), {I, {I, start_link, []}, permanent, 5000, Type, [I]}).
+-define(CHILD(I, Args, Type), {I, {I, start_link, Args}, permanent, 5000, Type, [I]}).
 
 %% ===================================================================
 %% API functions
 %% ===================================================================
 
-start_link() ->
-  supervisor:start_link({local, ?SERVER}, ?MODULE, []).
+start_link(App) ->
+  supervisor:start_link({local, ?SERVER}, ?MODULE, [App]).
 
 %% ===================================================================
 %% Supervisor callbacks
 %% ===================================================================
 
-init([]) ->
+init([App]) ->
   {ok, { {one_for_all, 5, 10}, [
-        ?CHILD(onewire_therm_sup_sup, supervisor),
-        ?CHILD(onewire_therm_manager, worker)
+        ?CHILD(onewire_therm_sup_sup, [], supervisor),
+        ?CHILD(onewire_therm_manager, [App], worker)
       ]} }.

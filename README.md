@@ -10,3 +10,8 @@ Shell got {therm,{"w1","28-0000043792e5"},15.375,{1365,511914,599490}}
 Shell got {therm,{"w1","28-0000043792e5"},15.437,{1365,511917,439586}}
 ok
 ```
+
+You do not need to monitor or link to any processes in onewire_therm,
+even if they crash during normal operation they will not affect your
+subscription, meaning you will eventually receive more messages once the
+relevant crashed processes come back up.

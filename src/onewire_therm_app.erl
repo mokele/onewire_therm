@@ -13,7 +13,7 @@
 %% ===================================================================
 
 start(_StartType, _StartArgs) ->
-  onewire_therm_sup:start_link().
+  onewire_therm_sup:start_link(self()).
 
 stop(_State) ->
   ok.
