@@ -1,6 +1,6 @@
 -module(onewire_therm_sup).
-
 -behaviour(supervisor).
+-define(SERVER, ?MODULE).
 
 %% API
 -export([
@@ -20,13 +20,14 @@
 %% ===================================================================
 
 start_link() ->
-  supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+  supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
 %% ===================================================================
 %% Supervisor callbacks
 %% ===================================================================
 
 init([]) ->
-  {ok, { {one_for_one, 5, 10}, [
-        ?CHILD(onewire_therm_sup_sup, supervisor)
+  {ok, { {one_for_all, 5, 10}, [
+        ?CHILD(onewire_therm_sup_sup, supervisor),
+        ?CHILD(onewire_therm_manager, worker)
       ]} }.

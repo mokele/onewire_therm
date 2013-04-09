@@ -6,7 +6,7 @@
 %% API
 -export([
     start_link/0,
-    start_child/2
+    start_child/3
   ]).
 
 %% Supervisor callbacks
@@ -21,8 +21,8 @@
 start_link() ->
   supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
-start_child(Wire, Device) ->
-  supervisor:start_child(?SERVER, [Wire, Device]).
+start_child(Subscribers, Wire, Device) ->
+  supervisor:start_child(?SERVER, [Subscribers, Wire, Device]).
 
 %% ===================================================================
 %% Supervisor callbacks

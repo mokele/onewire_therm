@@ -1,7 +1,11 @@
 {application, onewire_therm, [
     {description, ""},
     {vsn, "1"},
-    {registered, []},
+    {registered, [
+        onewire_therm_sup,
+        onewire_therm_sup_sup,
+        onewire_therm_manager
+      ]},
     {applications, [
         kernel,
         stdlib
