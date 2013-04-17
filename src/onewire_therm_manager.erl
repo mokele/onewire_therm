@@ -50,7 +50,8 @@ unsubscribe(Wire, Device) ->
 publish(Subscribers, Message) ->
   ets:foldl(
     fun({Subscriber}, true) ->
-        Subscriber ! Message
+        Subscriber ! Message,
+        true
     end,
     true,
     Subscribers
