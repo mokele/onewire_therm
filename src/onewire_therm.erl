@@ -91,7 +91,10 @@ handle_info(?TIMER, #s{
         Therm0#therm{timestamp = TS};
       {ok, T1, TS} ->
         onewire_therm_manager:publish(Subscribers, {therm, {Wire, Device}, T1, TS}),
-        Therm0#therm{temperature = T1, timestamp = TS}
+        Therm0#therm{temperature = T1, timestamp = TS};
+      {error, _} = Error ->
+        lager:warning("~p ~p ~p ~p", [?MODULE, Wire, Device, Error]),
+        Therm0
     end,
   timer(State),
   {noreply, State#s{last_value = Therm}};
@@ -109,7 +112,12 @@ code_change(_OldVsn, State, _Extra) ->
 %% ------------------------------------------------------------------
 
 path(Wire, Device) ->
-  filename:join(["", "sys", "bus", Wire, "devices", Device, Wire ++ "_slave"]).
+  Path =
+    case application:get_env(?MODULE, path) of
+      {ok, Path0} -> Path0;
+      _ -> filename:join(["", "sys", "bus"])
+    end,
+  filename:join([Path, Wire, "devices", Device, Wire ++ "_slave"]).
 
 timer(#s{timeout = Timeout}) ->
   timer:send_after(Timeout, ?TIMER).
