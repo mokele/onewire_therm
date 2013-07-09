@@ -91,10 +91,17 @@ handle_info(?TIMER, #s{
         Therm0#therm{timestamp = TS};
       {ok, T1, TS} ->
         onewire_therm_manager:publish(Subscribers, {therm, {Wire, Device}, T1, TS}),
-        Therm0#therm{temperature = T1, timestamp = TS}
+        Therm0#therm{temperature = T1, timestamp = TS};
+      Error ->
+        Error
     end,
   timer(State),
-  {noreply, State#s{last_value = Therm}};
+  case Therm of
+    {error, _} ->
+      {noreply, State};
+    _ ->
+      {noreply, State#s{last_value = Therm}}
+  end;
 handle_info(_Info, State) ->
   {noreply, State}.
 
@@ -115,8 +122,12 @@ timer(#s{timeout = Timeout}) ->
   timer:send_after(Timeout, ?TIMER).
 
 read(Path) when is_list(Path) ->
-  {ok, Binary} = file:read_file(Path),
-  read(Binary);
+  case file:read_file(Path) of
+    {ok, Binary} ->
+      read(Binary);
+    Else ->
+      Else
+  end;
 
 read(Binary) when is_binary(Binary) ->
   read(Binary, #therm{
