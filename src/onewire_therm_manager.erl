@@ -3,6 +3,7 @@
 -define(SERVER, ?MODULE).
 -define(SUBSCRIBERS_TO_THERMS_TAB, onewire_therm_subscribers_to_therms).
 -define(THERMS_TO_SUBSCRIBERS_TAB, onewire_therm_therms_to_subscribers).
+-define(SUBSCRIBERS_LIST, onewire_therm_subscribers_list).
 
 %% ------------------------------------------------------------------
 %% API Function Exports
@@ -10,11 +11,11 @@
 
 -export([
     start_link/1,
+    subscribe/0,
     subscribe/2,
     unsubscribe/0,
     unsubscribe/2,
-    publish/2,
-    list/0
+    publish/2
   ]).
 
 %% ------------------------------------------------------------------
@@ -39,6 +40,9 @@
 start_link(App) ->
   gen_server:start_link({local, ?SERVER}, ?MODULE, [App], []).
 
+%% notify of all new thermistors
+subscribe() ->
+  gen_server:call(?SERVER, {subscribe, self()}).
 subscribe(Wire, Device) ->
   gen_server:call(?SERVER, {subscribe, self(), Wire, Device}).
 
@@ -58,9 +62,6 @@ publish(Subscribers, Message) ->
     Subscribers
   ).
 
-list() ->
-  gen_server:call(?SERVER, list).
-
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -71,8 +72,10 @@ init([App]) ->
     undefined ->
       ets:new(?SUBSCRIBERS_TO_THERMS_TAB, [bag, named_table, public]),
       ets:new(?THERMS_TO_SUBSCRIBERS_TAB, [set, named_table, public]),
+      ets:new(?SUBSCRIBERS_LIST, [set, named_table, public]),
       ets:give_away(?SUBSCRIBERS_TO_THERMS_TAB, App, no_data),
-      ets:give_away(?THERMS_TO_SUBSCRIBERS_TAB, App, no_data);
+      ets:give_away(?THERMS_TO_SUBSCRIBERS_TAB, App, no_data),
+      ets:give_away(?SUBSCRIBERS_LIST, App, no_data);
     _ ->
       ets:foldl(
         fun({{Wire, Device} = Key, Subscribers}, _) ->
@@ -91,24 +94,10 @@ init([App]) ->
       therms = Therms
     }}.
 
-handle_call(list, _From, State) ->
-  L = lists:foldl(
-    fun(File, FoldL) ->
-        case string:tokens(File, [$/]) of
-          ["sys", "bus", Wire, "devices", Device] ->
-            case string:tokens(Device, [$-]) of
-              [_, _] ->
-                [{Wire, Device}|FoldL];
-              _ ->
-                FoldL
-            end;
-          _ ->
-            FoldL
-        end
-    end,
-    [],
-    filelib:wildcard("/sys/bus/w*/devices/*")
-  ),
+handle_call({subscribe, Subscriber}, _From, #s{therms = Therms} = State) ->
+  L = [Key || {Key, _Pid} <- ets:tab2list(Therms)],
+  ets:insert(?SUBSCRIBERS_LIST, {Subscriber}),
+  start_therm_listener(),
   {reply, {ok, L}, State};
 handle_call({subscribe, Subscriber, Wire, Device}, _From, #s{
     app_pid = App,
@@ -121,16 +110,7 @@ handle_call({subscribe, Subscriber, Wire, Device}, _From, #s{
         [{ThermPid0, Key, Subscribers0}] = ets:lookup(Therms, ThermPid0),
         {ThermPid0, Subscribers0};
       [] ->
-        Subscribers1 =
-          case ets:lookup(?THERMS_TO_SUBSCRIBERS_TAB, Key) of
-            [{Key, Subscribers0}] ->
-              Subscribers0;
-            [] ->
-              Subscribers0 = ets:new(onewire_therm_subscribers, [set, public]),
-              ets:give_away(Subscribers0, App, no_data),
-              ets:insert(?THERMS_TO_SUBSCRIBERS_TAB, {Key, Subscribers0}),
-              Subscribers0
-          end,
+        Subscribers1 = subscribers_table(App, Key),
         {ok, ThermPid0} = onewire_therm_sup_sup:start_child(Subscribers1, Wire, Device),
         monitor(process, ThermPid0),
         ets:insert(Therms, {ThermPid0, Key, Subscribers1}),
@@ -155,6 +135,32 @@ handle_call(_Request, _From, State) ->
 handle_cast(_Msg, State) ->
   {noreply, State}.
 
+handle_info(check_for_new_therms, #s{therms = Therms} = State) ->
+  L1 = [Key || {Key, _Pid} <- ets:tab2list(Therms)],
+  L2 = list(),
+  New = lists:subtract(L2, L1),
+  case New of
+    [] -> ok;
+    L ->
+      App = State#s.app_pid,
+      lists:foreach(
+        fun({Wire,Device} = Key) ->
+            Subscribers = subscribers_table(App, Key),
+            {ok, ThermPid} = onewire_therm_sup_sup:start_child(Subscribers, Wire, Device),
+            monitor(process, ThermPid),
+            ets:insert(Therms, {ThermPid, Key, Subscribers}),
+            ets:insert(Therms, {Key, ThermPid}),
+            ets:foldl(fun({Subscriber}, _) ->
+                  Subscriber ! {therm, Key}
+              end,
+              no_state,
+              ?SUBSCRIBERS_LIST
+            )
+        end,
+        L
+      )
+  end,
+  {noreply, State};
 handle_info({'DOWN', _Ref, process, Pid, _}, #s{
     therms = Therms
   } = State) ->
@@ -207,3 +213,36 @@ unsubscribe_therm(Pid, Key, Therms) ->
   [{ThermPid, Key, Subscribers}] = ets:lookup(Therms, ThermPid),
   ets:delete(?SUBSCRIBERS_TO_THERMS_TAB, Pid),
   ets:delete(Subscribers, Pid).
+
+list() ->
+  lists:foldl(
+    fun(File, FoldL) ->
+        case string:tokens(File, [$/]) of
+          ["sys", "bus", Wire, "devices", Device] ->
+            case string:tokens(Device, [$-]) of
+              [_, _] ->
+                [{Wire, Device}|FoldL];
+              _ ->
+                FoldL
+            end;
+          _ ->
+            FoldL
+        end
+    end,
+    [],
+    filelib:wildcard("/sys/bus/w*/devices/*")
+  ).
+
+start_therm_listener() ->
+  timer:send_after(2000, check_for_new_therms).
+
+subscribers_table(App, Key) ->
+  case ets:lookup(?THERMS_TO_SUBSCRIBERS_TAB, Key) of
+    [{Key, Subscribers0}] ->
+      Subscribers0;
+    [] ->
+      Subscribers0 = ets:new(onewire_therm_subscribers, [set, public]),
+      ets:give_away(Subscribers0, App, no_data),
+      ets:insert(?THERMS_TO_SUBSCRIBERS_TAB, {Key, Subscribers0}),
+      Subscribers0
+  end.
