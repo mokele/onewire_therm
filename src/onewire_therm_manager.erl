@@ -160,6 +160,7 @@ handle_info(check_for_new_therms, #s{therms = Therms} = State) ->
         L
       )
   end,
+  start_therm_listener(),
   {noreply, State};
 handle_info({'DOWN', _Ref, process, Pid, _}, #s{
     therms = Therms
