@@ -13,7 +13,8 @@
     subscribe/2,
     unsubscribe/0,
     unsubscribe/2,
-    publish/2
+    publish/2,
+    list/0
   ]).
 
 %% ------------------------------------------------------------------
@@ -56,6 +57,9 @@ publish(Subscribers, Message) ->
     Subscribers
   ).
 
+list() ->
+  gen_server:call(?SERVER, list).
+
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -86,6 +90,25 @@ init([App]) ->
       therms = Therms
     }}.
 
+handle_call(list, _From, State) ->
+  L = lists:foldl(
+    fun(File, FoldL) ->
+        case string:tokens(File, [$/]) of
+          ["sys", "bus", Wire, "devices", Device] ->
+            case string:tokens(Device, [$-]) of
+              [_, _] ->
+                [{Wire, Device}|FoldL];
+              _ ->
+                FoldL
+            end;
+          _ ->
+            FoldL
+        end
+    end,
+    [],
+    filelib:wildcard("/sys/bus/w*/devices/*")
+  ),
+  {reply, {ok, L}, State};
 handle_call({subscribe, Subscriber, Wire, Device}, _From, #s{
     app_pid = App,
     therms = Therms
