@@ -136,7 +136,7 @@ read(Path) when is_list(Path) ->
 
 read(Binary) when is_binary(Binary) ->
   read(Binary, #therm{
-      timestamp = erlang:now()
+      timestamp = erlang:timestamp()
     }).
 
 read(<<A1:16,_,A2:16,_,A3:16,_,A4:16,_,A5:16,_,A6:16,_,A7:16,_,A8:16,_,CRC:16,_,$:,_,"crc=",CRC:16,_,"YES",Rest0/binary>>,
